@@ -29,7 +29,7 @@ pub fn main(init: std.process.Init) !void {
         return;
     }
 
-    var editor_application = EditorApplication.init(init.gpa, init.io, project_root) catch |err| {
+    var editor_application = EditorApplication.init(init.gpa, init.io, project_root, "/home/jparsons/repos/fusion/sandbox-game/zig-out/lib/libsandbox-game.so") catch |err| {
         log.err("Failed to initialize editor: {}", .{err});
         return;
     };
@@ -42,7 +42,6 @@ test {
     _ = @import("cli/root.zig");
     _ = @import("editor_camera.zig");
     _ = @import("editor/application.zig");
-    _ = @import("game_systems.zig");
     _ = @import("state/play_state.zig");
     _ = @import("ui/scene_input.zig");
     _ = @import("platform/native_file_dialog.zig");

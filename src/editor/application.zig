@@ -20,10 +20,17 @@ pub const EditorApplication = @This();
 
 project: ProjectState,
 app: *fusion.Application(Game.definition),
+lib: ?fusion.game_module.GameLibrary,
 io: std.Io,
 allocator: std.mem.Allocator,
 
-pub fn init(allocator: std.mem.Allocator, io: std.Io, root_path: []const u8) !EditorApplication {
+pub fn init(allocator: std.mem.Allocator, io: std.Io, root_path: []const u8, game_library_path: ?[]const u8) !EditorApplication {
+    var game_library: ?fusion.game_module.GameLibrary = if (game_library_path) |path|
+        try fusion.game_module.GameLibrary.open(path)
+    else
+        null;
+    errdefer if (game_library) |*library| library.deinit();
+
     var project = try ProjectState.init(allocator, io, root_path);
     errdefer project.deinit(allocator, io);
 
@@ -33,18 +40,31 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io, root_path: []const u8) !Ed
         .height = null,
         .title = "Fusion Editor",
     }, project.project);
+    errdefer app.deinit();
+
+    if (game_library) |lib| {
+        if (!lib.game.register_components(&app.runtime.world)) {
+            return error.FailedToRegisterComponents;
+        }
+
+        try app.runtime.world.setResource(fusion.game_module.Binding, .{
+            .game = lib.game,
+        });
+    }
 
     return .{
         .project = project,
         .app = app,
         .io = io,
         .allocator = allocator,
+        .lib = game_library,
     };
 }
 
 pub fn deinit(self: *EditorApplication) void {
     self.app.deinit();
     self.project.deinit(self.allocator, self.io);
+    if (self.lib) |*lib| lib.deinit();
     self.* = undefined;
 }
 
