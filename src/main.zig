@@ -29,7 +29,7 @@ pub fn main(init: std.process.Init) !void {
         return;
     }
 
-    var editor_application = EditorApplication.init(init.gpa, init.io, project_root) catch |err| {
+    var editor_application = EditorApplication.init(init.gpa, init.io, project_root, options.asset_source) catch |err| {
         log.err("Failed to initialize editor: {}", .{err});
         return;
     };

@@ -128,7 +128,7 @@ pub const InspectorField = struct {
                 state,
                 parent,
                 overlay_host,
-                &assets.manifest,
+                &assets.source,
                 kind,
                 value.asset_ref,
             ) },

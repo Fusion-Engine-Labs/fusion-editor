@@ -1,4 +1,5 @@
 const std = @import("std");
+const fusion = @import("fusion_runtime");
 
 const default_project_name = "Fusion Game Example";
 
@@ -6,6 +7,9 @@ pub const Options = struct {
     root_path: []const u8 = ".",
     create_project: bool = false,
     project_name: []const u8 = default_project_name,
+    /// `open <path> --pack` loads cooked assets from the project's pack, the
+    /// way a shipped game does, instead of the loose cooked directory.
+    asset_source: fusion.AssetSource = .loose,
 };
 
 pub fn parse(args: []const []const u8) !Options {
@@ -21,7 +25,7 @@ pub fn parse(args: []const []const u8) !Options {
         }
         return error.UnknownArgument;
     }
-    if (args.len != 3) {
+    if (args.len > 4) {
         return error.UnknownArgument;
     }
 
@@ -30,6 +34,11 @@ pub fn parse(args: []const []const u8) !Options {
         options.create_project = true;
     } else if (!std.mem.eql(u8, args[1], "open")) {
         return error.UnknownArgument;
+    }
+
+    if (args.len == 4) {
+        if (options.create_project or !std.mem.eql(u8, args[3], "--pack")) return error.UnknownArgument;
+        options.asset_source = .pack;
     }
 
     return options;
@@ -71,4 +80,13 @@ test "parse rejects commands without a project path" {
 test "parse rejects unknown arguments" {
     try testing.expectError(error.UnknownArgument, parse(&.{ "fusion-editor", "wat" }));
     try testing.expectError(error.UnknownArgument, parse(&.{ "fusion-editor", "open", "/tmp/project", "extra" }));
+    try testing.expectError(error.UnknownArgument, parse(&.{ "fusion-editor", "create", "/tmp/project", "--pack" }));
+    try testing.expectError(error.UnknownArgument, parse(&.{ "fusion-editor", "open", "/tmp/project", "--pack", "extra" }));
+}
+
+test "parse open --pack loads assets from the project's pack" {
+    const options = try parse(&.{ "fusion-editor", "open", "/tmp/project", "--pack" });
+    try testing.expectEqualStrings("/tmp/project", options.root_path);
+    try testing.expectEqual(fusion.AssetSource.pack, options.asset_source);
+    try testing.expectEqual(fusion.AssetSource.loose, (try parse(&.{ "fusion-editor", "open", "/tmp/project" })).asset_source);
 }

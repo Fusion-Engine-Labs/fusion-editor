@@ -22,9 +22,11 @@ project: ProjectState,
 app: *fusion.Application(Game.definition),
 io: std.Io,
 allocator: std.mem.Allocator,
+/// Kept when switching projects.
+asset_source: fusion.AssetSource,
 
-pub fn init(allocator: std.mem.Allocator, io: std.Io, root_path: []const u8) !EditorApplication {
-    var project = try ProjectState.init(allocator, io, root_path);
+pub fn init(allocator: std.mem.Allocator, io: std.Io, root_path: []const u8, asset_source: fusion.AssetSource) !EditorApplication {
+    var project = try ProjectState.init(allocator, io, root_path, asset_source);
     errdefer project.deinit(allocator, io);
 
     const App = fusion.Application(Game.definition);
@@ -39,6 +41,7 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io, root_path: []const u8) !Ed
         .app = app,
         .io = io,
         .allocator = allocator,
+        .asset_source = asset_source,
     };
 }
 
@@ -175,7 +178,7 @@ fn switchProject(
     viewport_texture: *ui.TextureHandle,
     viewport_binding: *viewport.TextureBinding,
 ) !void {
-    var next_project = try ProjectState.init(self.allocator, self.io, root_path);
+    var next_project = try ProjectState.init(self.allocator, self.io, root_path, self.asset_source);
     errdefer next_project.deinit(self.allocator, self.io);
 
     const next_runtime = try Runtime.init(self.allocator, self.io, next_project.project);

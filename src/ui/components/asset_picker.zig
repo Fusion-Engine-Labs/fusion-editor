@@ -24,7 +24,7 @@ pub const AssetPicker = struct {
         state: *ui.Ui,
         parent: ui.NodeId,
         overlay_host: ui.NodeId,
-        manifest: *const fusion.RuntimeAssetManifest,
+        store: *const fusion.AssetStore,
         kind: zimp.AssetKind,
         selected: zimp.AssetId,
     ) !AssetPicker {
@@ -47,7 +47,7 @@ pub const AssetPicker = struct {
         }));
         errdefer state.destroySubtree(button);
 
-        const button_label = try ui.widgets.text(state, button, selectedLabel(manifest, selected), .{
+        const button_label = try ui.widgets.text(state, button, selectedLabel(store, selected), .{
             .width = .fill,
             .height = .fill,
             .padding = .{ .top = state.centeredTextTop(state.theme.metrics.control_height, state.theme.font.body) },
@@ -72,16 +72,32 @@ pub const AssetPicker = struct {
         });
         errdefer list.deinit(state);
 
+        // The store orders assets by id; list them by name.
+        const Item = struct { id: zimp.AssetId, label: []const u8 };
+        var items: std.ArrayList(Item) = .empty;
+        defer items.deinit(allocator);
+        const range = store.kindRange(kind);
+        try items.ensureTotalCapacityPrecise(allocator, range.end - range.start);
+        for (range.start..range.end) |i| {
+            const index: fusion.AssetStore.Index = @intCast(i);
+            items.appendAssumeCapacity(.{ .id = store.idAt(index), .label = assetLabel(store.nameAt(index)) });
+        }
+        std.mem.sort(Item, items.items, {}, struct {
+            fn lessThan(_: void, a: Item, b: Item) bool {
+                return std.mem.order(u8, a.label, b.label) == .lt;
+            }
+        }.lessThan);
+
         var ids: std.ArrayList(zimp.AssetId) = .empty;
         errdefer ids.deinit(allocator);
         var labels: std.ArrayList([]const u8) = .empty;
         defer labels.deinit(allocator);
-
-        try ids.append(allocator, .zero);
-        for (manifest.entries) |*entry| {
-            if (entry.kind != kind) continue;
-            try ids.append(allocator, entry.id);
-            try labels.append(allocator, assetLabel(entry.cooked_path));
+        try ids.ensureTotalCapacityPrecise(allocator, items.items.len + 1);
+        try labels.ensureTotalCapacityPrecise(allocator, items.items.len);
+        ids.appendAssumeCapacity(.zero);
+        for (items.items) |item| {
+            ids.appendAssumeCapacity(item.id);
+            labels.appendAssumeCapacity(item.label);
         }
         try list.setItems(state, labels.items);
 
@@ -136,13 +152,13 @@ pub const AssetPicker = struct {
         return id;
     }
 
-    pub fn labelFor(manifest: *const fusion.RuntimeAssetManifest, id: zimp.AssetId) []const u8 {
-        const entry = manifest.byId(id) orelse return "(missing asset)";
-        return assetLabel(entry.cooked_path);
+    pub fn labelFor(store: *const fusion.AssetStore, id: zimp.AssetId) []const u8 {
+        const index = store.find(id) orelse return "(missing asset)";
+        return assetLabel(store.nameAt(index));
     }
 
-    fn selectedLabel(manifest: *const fusion.RuntimeAssetManifest, selected: zimp.AssetId) []const u8 {
-        return if (selected.isZero()) none_label else labelFor(manifest, selected);
+    fn selectedLabel(store: *const fusion.AssetStore, selected: zimp.AssetId) []const u8 {
+        return if (selected.isZero()) none_label else labelFor(store, selected);
     }
 
     fn setChevron(self: *AssetPicker, state: *ui.Ui, open: bool) !void {
