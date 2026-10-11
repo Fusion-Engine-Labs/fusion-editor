@@ -42,7 +42,6 @@ test {
     _ = @import("cli/root.zig");
     _ = @import("editor_camera.zig");
     _ = @import("editor/application.zig");
-    _ = @import("game_systems.zig");
     _ = @import("state/play_state.zig");
     _ = @import("ui/scene_input.zig");
     _ = @import("platform/native_file_dialog.zig");

@@ -20,6 +20,7 @@ pub const EditorApplication = @This();
 
 project: ProjectState,
 app: *fusion.Application(Game.definition),
+lib: ?fusion.game_module.GameLibrary,
 io: std.Io,
 allocator: std.mem.Allocator,
 /// Kept when switching projects.
@@ -29,18 +30,27 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io, root_path: []const u8, ass
     var project = try ProjectState.init(allocator, io, root_path, asset_source);
     errdefer project.deinit(allocator, io);
 
+    var game_library = try project.project.openGameLibrary(allocator, io);
+    errdefer if (game_library) |*library| library.deinit();
+
     const App = fusion.Application(Game.definition);
     const app = try App.init(allocator, io, .{
         .width = null,
         .height = null,
         .title = "Fusion Editor",
     }, project.project);
+    errdefer app.deinit();
+
+    if (game_library) |lib| {
+        try lib.bind(&app.runtime.world);
+    }
 
     return .{
         .project = project,
         .app = app,
         .io = io,
         .allocator = allocator,
+        .lib = game_library,
         .asset_source = asset_source,
     };
 }
@@ -48,6 +58,7 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io, root_path: []const u8, ass
 pub fn deinit(self: *EditorApplication) void {
     self.app.deinit();
     self.project.deinit(self.allocator, self.io);
+    if (self.lib) |*lib| lib.deinit();
     self.* = undefined;
 }
 
@@ -178,8 +189,13 @@ fn switchProject(
     viewport_texture: *ui.TextureHandle,
     viewport_binding: *viewport.TextureBinding,
 ) !void {
+    if (self.lib != null) return error.GameProjectSwitchNotSupported;
+
     var next_project = try ProjectState.init(self.allocator, self.io, root_path, self.asset_source);
     errdefer next_project.deinit(self.allocator, self.io);
+    if (next_project.project.manifest.game_library != null) {
+        return error.GameProjectSwitchNotSupported;
+    }
 
     const next_runtime = try Runtime.init(self.allocator, self.io, next_project.project);
     errdefer next_runtime.deinit();
