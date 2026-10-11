@@ -26,15 +26,12 @@ allocator: std.mem.Allocator,
 /// Kept when switching projects.
 asset_source: fusion.AssetSource,
 
-pub fn init(allocator: std.mem.Allocator, io: std.Io, root_path: []const u8, asset_source: fusion.AssetSource, game_library_path: ?[]const u8) !EditorApplication {
-    var game_library: ?fusion.game_module.GameLibrary = if (game_library_path) |path|
-        try fusion.game_module.GameLibrary.open(path)
-    else
-        null;
-    errdefer if (game_library) |*library| library.deinit();
-
+pub fn init(allocator: std.mem.Allocator, io: std.Io, root_path: []const u8, asset_source: fusion.AssetSource) !EditorApplication {
     var project = try ProjectState.init(allocator, io, root_path, asset_source);
     errdefer project.deinit(allocator, io);
+
+    var game_library = try project.project.openGameLibrary(allocator, io);
+    errdefer if (game_library) |*library| library.deinit();
 
     const App = fusion.Application(Game.definition);
     const app = try App.init(allocator, io, .{
@@ -44,15 +41,7 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io, root_path: []const u8, ass
     }, project.project);
     errdefer app.deinit();
 
-    if (game_library) |lib| {
-        if (!lib.game.register_components(&app.runtime.world)) {
-            return error.FailedToRegisterComponents;
-        }
-
-        try app.runtime.world.setResource(fusion.game_module.Binding, .{
-            .game = lib.game,
-        });
-    }
+    if (game_library) |lib| try lib.bind(&app.runtime.world);
 
     return .{
         .project = project,
@@ -198,8 +187,11 @@ fn switchProject(
     viewport_texture: *ui.TextureHandle,
     viewport_binding: *viewport.TextureBinding,
 ) !void {
+    if (self.lib != null) return error.GameProjectSwitchNotSupported;
+
     var next_project = try ProjectState.init(self.allocator, self.io, root_path, self.asset_source);
     errdefer next_project.deinit(self.allocator, self.io);
+    if (next_project.project.manifest.game_library != null) return error.GameProjectSwitchNotSupported;
 
     const next_runtime = try Runtime.init(self.allocator, self.io, next_project.project);
     errdefer next_runtime.deinit();
