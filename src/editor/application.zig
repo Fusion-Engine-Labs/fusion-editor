@@ -41,7 +41,9 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io, root_path: []const u8, ass
     }, project.project);
     errdefer app.deinit();
 
-    if (game_library) |lib| try lib.bind(&app.runtime.world);
+    if (game_library) |lib| {
+        try lib.bind(&app.runtime.world);
+    }
 
     return .{
         .project = project,
@@ -191,7 +193,9 @@ fn switchProject(
 
     var next_project = try ProjectState.init(self.allocator, self.io, root_path, self.asset_source);
     errdefer next_project.deinit(self.allocator, self.io);
-    if (next_project.project.manifest.game_library != null) return error.GameProjectSwitchNotSupported;
+    if (next_project.project.manifest.game_library != null) {
+        return error.GameProjectSwitchNotSupported;
+    }
 
     const next_runtime = try Runtime.init(self.allocator, self.io, next_project.project);
     errdefer next_runtime.deinit();
