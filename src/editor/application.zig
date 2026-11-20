@@ -136,6 +136,9 @@ pub fn run(self: *EditorApplication) !void {
     var ui_backend = Backend.init(self.allocator, &ui_renderer);
     defer ui_backend.deinit();
 
+    var ui_events: std.ArrayList(fusion.ZEvent) = .empty;
+    defer ui_events.deinit(self.allocator);
+
     while (app.window.shouldCloseWindow()) {
         native_menu.poll();
 
@@ -157,15 +160,20 @@ pub fn run(self: *EditorApplication) !void {
         // and start or restart the play session.
         try editor_context.sceneController().update();
 
+        // The native menu embeds the GLFW window in its own, so GLFW never
+        // sees focus there; ask the host window when it knows.
+        const focused = native_menu.isActive() orelse app.window.isFocused();
         const window_size = app.window.getWindowSize();
-        const runtime_events = app.beginFrame();
+        const runtime_events = app.beginFrame(focused);
+        const scene_input = editor_context.sceneController().sceneInputCapture();
+        scene_input.cursor_locked = app.cursor_locked;
         const frame = try ui_backend.beginFrame(.{
             .window = app.window,
             .window_size = Backend.toUiSize(window_size, native_ui_scale),
             .framebuffer_size = Backend.toPixelSize(app.window.getFramebufferSize()),
             .ui_scale = native_ui_scale,
             .dt = app.deltaTime(),
-        }, runtime_events);
+        }, try scene_input.uiEvents(self.allocator, &ui_events, runtime_events));
         try ui_state.beginFrame(frame.toBeginFrame());
 
         _ = try editor.dockSpace(&ui_state, frame.window_size);
@@ -182,19 +190,25 @@ pub fn run(self: *EditorApplication) !void {
         _ = try viewport_target.ensureSize(viewport_rect, frame.text_raster_scale);
         var input_capture = ui_state.inputCapture();
         input_capture.wants_mouse = input_capture.wants_mouse or editor.isInteracting();
-        editor_context.sceneController().sceneInputCapture().processSceneEvents(
+        scene_input.processSceneEvents(
             app.input(),
             runtime_events,
             viewport_rect,
             ui_state.mousePosition(),
             input_capture,
         );
+        // Escape always gets the mouse back from a game that locked it.
+        if (app.cursor_locked and app.input().wasKeyPressed(.Escape)) app.releaseCursorLock();
 
-        switch (editor_context.sceneController().playState()) {
+        const play_state = editor_context.sceneController().playState();
+        switch (play_state) {
             // A game that fails mid-frame ends its session, not the editor.
             .Play => app.update() catch |err| editor_context.sceneController().failSession(err),
             .Pause, .Stop => try app.updateWithSchedule(Game.editor_schedule_override),
         }
+        // Only a running, focused game may hold the cursor; pausing,
+        // stopping, or switching windows hands it back.
+        app.updateCursorLock(play_state == .Play and focused);
         if (viewport_target.renderTarget()) |target| try app.renderScene(target);
 
         try ui_renderer.render(ui_state.drawData());
