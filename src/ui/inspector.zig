@@ -268,7 +268,7 @@ fn rebuild(self: *Inspector, state: *ui.Ui) !void {
 
 fn showAddComponentList(self: *Inspector, state: *ui.Ui, entity: *const zimp.scene.SceneEntity) !void {
     const component_list = if (self.component_list) |*list| list else return;
-    const schemas = try self.scenes.runtime.schemas.sortedSchemas(self.allocator);
+    const schemas = try self.scenes.runtime.authoring.schemas.sortedSchemas(self.allocator);
     defer self.allocator.free(schemas);
 
     self.addable_component_ids.clearRetainingCapacity();

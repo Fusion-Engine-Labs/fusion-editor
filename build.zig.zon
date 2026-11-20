@@ -2,14 +2,14 @@
     .name = .fusion_sandbox,
     .version = "0.0.0",
     .fingerprint = 0x39ff43ce87ab0faf,
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .fusion_runtime = .{
             .path = "../fusion-runtime",
         },
         .zGUI = .{
-            .url = "git+https://github.com/Fusion-Engine-Labs/zGUI.git?ref=modern#0bd7ac58665d2d6f32a4a1e87f3199aff632da00",
-            .hash = "zGUI-0.0.0-LDuKkVycEQCGXpEIOD6nd2tjgv8uzSRo8MKY-oYIwOdy",
+            .url = "git+https://github.com/Fusion-Engine-Labs/zGUI.git?ref=modern#1bdc12acda76310340d1d0c55de66661734a17f3",
+            .hash = "zGUI-0.0.0-LDuKkQupEQB0ek8rciUjHDLDAEYxKU8nelOClgcOngKc",
         },
     },
     .paths = .{

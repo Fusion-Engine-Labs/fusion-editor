@@ -12,6 +12,7 @@ const EditorUi = @import("../ui/editor_ui.zig");
 const viewport = @import("../ui/viewport.zig");
 const EditorContext = @import("context.zig");
 const log = @import("../utilities/log.zig");
+const GameCode = @import("game_code.zig");
 const actions = @import("actions.zig");
 const Game = @import("../game.zig");
 
@@ -20,7 +21,9 @@ pub const EditorApplication = @This();
 
 project: ProjectState,
 app: *fusion.Application(Game.definition),
-lib: ?fusion.game_module.GameLibrary,
+/// Builds and holds the game library. Destroyed after the runtime, whose
+/// sessions call into the library until then.
+game: GameCode,
 io: std.Io,
 allocator: std.mem.Allocator,
 /// Kept when switching projects.
@@ -30,9 +33,6 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io, root_path: []const u8, ass
     var project = try ProjectState.init(allocator, io, root_path, asset_source);
     errdefer project.deinit(allocator, io);
 
-    var game_library = try project.project.openGameLibrary(allocator, io);
-    errdefer if (game_library) |*library| library.deinit();
-
     const App = fusion.Application(Game.definition);
     const app = try App.init(allocator, io, .{
         .width = null,
@@ -41,24 +41,35 @@ pub fn init(allocator: std.mem.Allocator, io: std.Io, root_path: []const u8, ass
     }, project.project);
     errdefer app.deinit();
 
-    if (game_library) |lib| {
-        try lib.bind(&app.runtime.world);
-    }
+    var game = GameCode.init(allocator, io, project.project);
+    errdefer game.deinit();
+    try adoptExistingLibrary(&game, app.runtime);
 
     return .{
         .project = project,
         .app = app,
+        .game = game,
         .io = io,
         .allocator = allocator,
-        .lib = game_library,
         .asset_source = asset_source,
     };
 }
 
+/// Gives `runtime` the components of a library left by an earlier build, so
+/// the project's scenes load with their game data. Nothing is built here.
+fn adoptExistingLibrary(game: *GameCode, runtime: *Runtime) !void {
+    const library = game.loadExisting() orelse return;
+    runtime.setGameLibrary(library) catch |err| {
+        log.warn("existing game library was rejected ({s}); press Play to rebuild it", .{@errorName(err)});
+        return;
+    };
+}
+
 pub fn deinit(self: *EditorApplication) void {
+    self.game.cancelBuild();
     self.app.deinit();
+    self.game.deinit();
     self.project.deinit(self.allocator, self.io);
-    if (self.lib) |*lib| lib.deinit();
     self.* = undefined;
 }
 
@@ -73,6 +84,7 @@ pub fn run(self: *EditorApplication) !void {
         self.io,
         self.project.project,
         app.runtime,
+        &self.game,
     );
     defer editor_context.destroy();
 
@@ -85,6 +97,12 @@ pub fn run(self: *EditorApplication) !void {
     try native_menu.addItem(file, "New Project", actions.ids.new_project);
     try native_menu.addItem(file, "Open Project", actions.ids.open_project);
     try native_menu.addItem(file, "Save", actions.ids.save_project);
+
+    const game_menu = try native_menu.addMenu("Game");
+    try native_menu.addItem(game_menu, "Play", actions.ids.play);
+    try native_menu.addItem(game_menu, "Pause", actions.ids.pause);
+    try native_menu.addItem(game_menu, "Stop", actions.ids.stop);
+    try native_menu.addItem(game_menu, "Build", actions.ids.build_game);
 
     var ui_renderer = try ui.OpenGlRenderer.init(self.allocator, fusion.Window.getProcAddress);
     defer ui_renderer.deinit();
@@ -135,6 +153,10 @@ pub fn run(self: *EditorApplication) !void {
             },
         };
 
+        // Picks up a finished game build: may replace the authoring world
+        // and start or restart the play session.
+        try editor_context.sceneController().update();
+
         const window_size = app.window.getWindowSize();
         const runtime_events = app.beginFrame();
         const frame = try ui_backend.beginFrame(.{
@@ -169,7 +191,8 @@ pub fn run(self: *EditorApplication) !void {
         );
 
         switch (editor_context.sceneController().playState()) {
-            .Play => try app.update(),
+            // A game that fails mid-frame ends its session, not the editor.
+            .Play => app.update() catch |err| editor_context.sceneController().failSession(err),
             .Pause, .Stop => try app.updateWithSchedule(Game.editor_schedule_override),
         }
         if (viewport_target.renderTarget()) |target| try app.renderScene(target);
@@ -189,16 +212,20 @@ fn switchProject(
     viewport_texture: *ui.TextureHandle,
     viewport_binding: *viewport.TextureBinding,
 ) !void {
-    if (self.lib != null) return error.GameProjectSwitchNotSupported;
+    // Nothing of the current project may keep running game code or building.
+    editor_context.sceneController().shutdownPlay();
 
     var next_project = try ProjectState.init(self.allocator, self.io, root_path, self.asset_source);
     errdefer next_project.deinit(self.allocator, self.io);
-    if (next_project.project.manifest.game_library != null) {
-        return error.GameProjectSwitchNotSupported;
-    }
 
     const next_runtime = try Runtime.init(self.allocator, self.io, next_project.project);
+    var next_game = GameCode.init(self.allocator, self.io, next_project.project);
+    // Registered in this order so that on failure the runtime is destroyed
+    // before the library its world took components from is closed.
+    errdefer next_game.deinit();
     errdefer next_runtime.deinit();
+
+    try adoptExistingLibrary(&next_game, next_runtime);
     try next_runtime.start();
     next_runtime.setDebugStatsEnabled(true);
 
@@ -210,11 +237,14 @@ fn switchProject(
 
     const previous_runtime = self.app.runtime;
     var previous_project = self.project;
+    var previous_game = self.game;
     var previous_viewport_target = viewport_target.*;
     var previous_viewport_texture = viewport_texture.*;
 
     self.project = next_project;
     self.app.runtime = next_runtime;
+    // The scene controller points at `self.game`, which keeps its address.
+    self.game = next_game;
     viewport_target.* = next_viewport_target;
     viewport_texture.* = next_viewport_texture;
     viewport_binding.replace(next_viewport_texture);
@@ -223,6 +253,7 @@ fn switchProject(
     ui_renderer.destroyTexture(&previous_viewport_texture);
     previous_viewport_target.deinit();
     previous_runtime.deinit();
+    previous_game.deinit();
     previous_project.deinit(self.allocator, self.io);
 }
 

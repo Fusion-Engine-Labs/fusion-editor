@@ -13,6 +13,7 @@ pub const ids = struct {
     pub const new_project = actionId("editor.project.new");
     pub const open_project = actionId("editor.project.open");
     pub const save_project = actionId("editor.project.save");
+    pub const build_game = actionId("editor.game.build");
     pub const play = actionId("editor.play");
     pub const pause = actionId("editor.pause");
     pub const stop = actionId("editor.stop");
@@ -142,10 +143,10 @@ fn requireContextPointer(comptime Context: type) type {
 
 fn actionContext(comptime Function: type) type {
     const info = @typeInfo(Function);
-    if (info != .@"fn" or info.@"fn".params.len != 1) {
+    if (info != .@"fn" or info.@"fn".param_attrs.len != 1) {
         @compileError("action state callbacks must accept exactly one context pointer");
     }
-    return requireContextPointer(info.@"fn".params[0].type.?);
+    return requireContextPointer(info.@"fn".param_types[0].?);
 }
 
 fn toContext(comptime Context: type, raw_context: ?*anyopaque) Context {

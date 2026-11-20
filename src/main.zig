@@ -2,9 +2,15 @@ const builtin = @import("builtin");
 const std = @import("std");
 
 const EditorApplication = @import("editor/application.zig");
+const ConsoleLog = @import("editor/console_log.zig");
 const actions = @import("actions/root.zig");
 const log = @import("utilities/log.zig");
 const cli = @import("cli/root.zig");
+
+/// Routes every `std.log` message to the Console panel as well as stderr.
+pub const std_options: std.Options = .{
+    .logFn = ConsoleLog.logFn,
+};
 
 inline fn allocator(gpa: std.mem.Allocator) std.mem.Allocator {
     if (builtin.mode == .Debug) {
@@ -25,7 +31,13 @@ pub fn main(init: std.process.Init) !void {
     defer init.gpa.free(project_root);
 
     if (options.create_project) {
-        try actions.createProject(init.gpa, init.io, project_root, options.project_name);
+        const sdk_path = if (options.sdk_path) |path| try cli.absoluteProjectRoot(init.gpa, init.io, path) else null;
+        defer if (sdk_path) |path| init.gpa.free(path);
+
+        actions.createProject(init.gpa, init.io, project_root, .{
+            .name = options.project_name,
+            .sdk = if (sdk_path) |path| .{ .path = path } else actions.template.default_sdk,
+        }) catch |err| log.err("Failed to create project: {}", .{err});
         return;
     }
 
@@ -39,10 +51,12 @@ pub fn main(init: std.process.Init) !void {
 }
 
 test {
+    _ = @import("actions/root.zig");
     _ = @import("cli/root.zig");
     _ = @import("editor_camera.zig");
     _ = @import("editor/application.zig");
     _ = @import("state/play_state.zig");
+    _ = @import("ui/console.zig");
     _ = @import("ui/scene_input.zig");
     _ = @import("platform/native_file_dialog.zig");
     _ = @import("ui/viewport.zig");

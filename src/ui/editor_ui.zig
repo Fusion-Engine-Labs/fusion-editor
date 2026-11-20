@@ -2,6 +2,7 @@ const std = @import("std");
 const ui = @import("zGUI");
 
 const EditorIcons = @import("../icons/editor_icons.zig");
+const ConsoleLog = @import("../editor/console_log.zig");
 const EditorContext = @import("../editor/context.zig");
 const Workspace = @import("workspace.zig");
 const inspector = @import("inspector.zig");
@@ -72,7 +73,7 @@ pub fn init(
             .file = icons.file,
         },
     }));
-    const console_window = try addPanel(&workspace, state, console.descriptor, console.init());
+    const console_window = try addPanel(&workspace, state, console.descriptor, console.init(&ConsoleLog.global));
 
     try createDefaultLayout(&workspace.dock, .{
         .scene = scene_window,

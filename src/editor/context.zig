@@ -7,6 +7,7 @@ const EditorPlayback = @import("../state/play_state.zig");
 const SceneController = @import("scene_controller.zig");
 const ProjectModel = @import("project_model.zig");
 const action_mod = @import("actions.zig");
+const GameCode = @import("game_code.zig");
 const Game = @import("../game.zig");
 
 const Runtime = fusion.Runtime(Game.definition);
@@ -23,11 +24,13 @@ scene: SceneController,
 actions: action_mod.Registry,
 pending_command: ?Command = null,
 
+/// `game` must outlive the context and keep its address.
 pub fn create(
     allocator: std.mem.Allocator,
     io: std.Io,
     project: *const fusion.Project,
     runtime: *Runtime,
+    game: *GameCode,
 ) !*EditorContext {
     const context = try allocator.create(EditorContext);
     errdefer allocator.destroy(context);
@@ -35,7 +38,7 @@ pub fn create(
     context.io = io;
     context.allocator = allocator;
     context.project = ProjectModel.init(allocator, io, project);
-    context.scene = try SceneController.init(&context.project, runtime);
+    context.scene = try SceneController.init(&context.project, runtime, game);
     context.actions = action_mod.Registry.init(allocator);
     context.pending_command = null;
 
@@ -83,6 +86,7 @@ fn registerActions(self: *EditorContext) !void {
     try self.actions.register(action_mod.ids.play, action_mod.Action.bind("Play", &self.scene, SceneController.play).withEnabled(SceneController.canPlay));
     try self.actions.register(action_mod.ids.pause, action_mod.Action.bind("Pause", &self.scene, SceneController.pause).withEnabled(SceneController.canPause));
     try self.actions.register(action_mod.ids.stop, action_mod.Action.bind("Stop", &self.scene, SceneController.stop).withEnabled(SceneController.canStop));
+    try self.actions.register(action_mod.ids.build_game, action_mod.Action.bind("Build Game", &self.scene, SceneController.build).withEnabled(SceneController.canBuild));
 }
 
 fn newProject(self: *EditorContext) !void {
@@ -105,12 +109,10 @@ fn saveProject(self: *EditorContext) !void {
     try self.scene.saveScene();
 }
 
+/// Scaffolds a project in `directory` and opens it.
 fn onNewProjectDirectory(self: *EditorContext, directory: []const u8) !void {
-    const project_name = try self.allocator.dupe(u8, std.fs.path.basename(directory));
-    defer self.allocator.free(project_name);
-
-    try createProject(self.allocator, self.io, directory, project_name);
-    std.log.info("New Project selected directory: {s}", .{directory});
+    try createProject(self.allocator, self.io, directory, .{ .name = std.fs.path.basename(directory) });
+    try self.requestProjectSwitch(directory);
 }
 
 fn requestProjectSwitch(self: *EditorContext, directory: []const u8) !void {
@@ -128,4 +130,6 @@ fn clearPendingCommand(self: *EditorContext) void {
 
 test {
     _ = @import("project_model.zig");
+    _ = @import("game_code.zig");
+    _ = @import("console_log.zig");
 }
