@@ -178,6 +178,9 @@ pub fn buildZigZon(
         .path => |sdk_root| path: {
             const relative = try std.fs.path.relativeAlloc(allocator, "/", null, project_root, sdk_root);
             defer allocator.free(relative);
+            // Windows yields `..\..\sdk`; a backslash is an escape in a ZON
+            // string, and Zig takes forward slashes on every OS.
+            std.mem.replaceScalar(u8, relative, '\\', '/');
             break :path try std.fmt.allocPrint(allocator, "            .path = \"{s}\",\n", .{relative});
         },
     };
