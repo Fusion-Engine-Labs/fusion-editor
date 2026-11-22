@@ -8,8 +8,8 @@
             .path = "../fusion-runtime",
         },
         .zGUI = .{
-            .url = "git+https://github.com/Fusion-Engine-Labs/zGUI.git?ref=modern#1bdc12acda76310340d1d0c55de66661734a17f3",
-            .hash = "zGUI-0.0.0-LDuKkQupEQB0ek8rciUjHDLDAEYxKU8nelOClgcOngKc",
+            .url = "git+https://github.com/Fusion-Engine-Labs/zGUI.git?ref=modern#750ffd722cb195423f816697d8dfda7f5f783d76",
+            .hash = "zGUI-0.0.0-LDuKkRquEQA4TCNa1qHPXJa-JRtuv5qXB-ubpR-28-rS",
         },
     },
     .paths = .{
